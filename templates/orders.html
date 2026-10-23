@@ -1,0 +1,213 @@
+{% extends "base.html" %}
+{% block title %}Meyve Siparişleri – {{ month_label }}{% endblock %}
+{% block main_class %}wide{% endblock %}
+{% block content %}
+<style>
+  .pivot th, .pivot td { padding: 7px 9px; }
+  .pivot thead th { text-align: center; }
+  .pivot .grp { border-left: 2px solid var(--border); }
+  .pivot .band { background: #fffbeb; }
+  .pivot tbody tr:hover td { background: #eff6ff; }
+  .pivot tfoot td { font-weight: 700; border-top: 2px solid var(--text); background: #f9fafb; }
+  .pivot .empty-cell { color: #d1d5db; }
+  .month-nav { display: flex; align-items: center; gap: 8px; }
+  .month-nav h1 { margin: 0; min-width: 150px; text-align: center; }
+  .summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 18px; }
+  .pay-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 14px; margin-bottom: 18px; }
+  .pay { background: var(--card); border: 1px solid var(--border); border-top: 4px solid #cbd5e1; border-radius: 10px; padding: 14px 16px; display: flex; flex-direction: column; gap: 8px; }
+  .pay.total { border-top-color: #111827; background: #f9fafb; }
+  .pay.tutuyor { border-top-color: var(--green); }
+  .pay.fazla { border-top-color: var(--red); }
+  .pay.eksik { border-top-color: #d97706; }
+  .pay-head { display: flex; justify-content: space-between; gap: 8px; align-items: flex-start; }
+  .pay-head strong { font-size: 14px; line-height: 1.3; }
+  .pay-head .badge { white-space: nowrap; flex-shrink: 0; }
+  .pay-amount { font-size: 24px; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1.1; }
+  .pay-amount small { display: block; font-size: 12px; font-weight: 400; color: var(--muted); margin-top: 2px; }
+  .pay-meta { font-size: 12px; color: var(--muted); }
+  .pay-form { display: flex; gap: 6px; flex-wrap: wrap; }
+  .pay-form input { padding: 5px 8px; font-size: 13px; min-width: 0; }
+  .pay-form input[name=amount] { flex: 1 1 110px; text-align: right; }
+  .pay-form input[name=invoice_no] { flex: 1 1 80px; }
+  .pay-diff { font-size: 13px; font-weight: 600; padding: 6px 10px; border-radius: 7px; }
+  .pay-diff.tutuyor { background: var(--green-bg); color: var(--green); }
+  .pay-diff.fazla { background: var(--red-bg); color: var(--red); }
+  .pay-diff.eksik { background: var(--amber-bg); color: var(--amber); }
+  .pay-diff.bekliyor { background: #f1f5f9; color: var(--muted); font-weight: 400; }
+  .pay-links { display: flex; gap: 12px; font-size: 13px; margin-top: auto; }
+  .badge-wait { background: #f1f5f9; color: var(--muted); }
+  .badge-ok { background: var(--green-bg); color: var(--green); }
+  .badge-bad { background: var(--red-bg); color: var(--red); }
+  .badge-warn { background: var(--amber-bg); color: var(--amber); }
+  .section-title { display: flex; align-items: baseline; gap: 4px 10px; flex-wrap: wrap; margin: 0 0 10px; }
+  .section-title h2 { margin: 0; }
+</style>
+
+<div class="row" style="margin-bottom:16px">
+  <div class="month-nav">
+    <a class="btn" href="{{ url_for('orders', ay=prev_month, firma=supplier_id) }}" aria-label="Önceki ay">‹</a>
+    <h1>{{ month_label }}</h1>
+    <a class="btn" href="{{ url_for('orders', ay=next_month, firma=supplier_id) }}" aria-label="Sonraki ay">›</a>
+  </div>
+  <form method="get" class="row">
+    <input type="hidden" name="ay" value="{{ month }}">
+    <select name="firma" onchange="this.form.submit()">
+      <option value="">Tüm firmalar</option>
+      {% for s in suppliers %}<option value="{{ s.id }}" {{ 'selected' if s.id == supplier_id }}>{{ s.name }}</option>{% endfor %}
+    </select>
+  </form>
+  <span class="spacer"></span>
+  <a class="btn" href="{{ url_for('export_orders', ay=month, firma=supplier_id) }}">⬇ Aylık CSV</a>
+  <a class="btn" href="{{ url_for('fruit_settings', next=request.full_path) }}">⚙ Meyve birimleri</a>
+  <a class="btn btn-primary" href="{{ url_for('order_new') }}">+ Yeni sipariş</a>
+</div>
+
+{% set labels = {'bekliyor': ('Fatura bekleniyor', 'badge-wait'), 'tutuyor': ('✓ Fatura tutuyor', 'badge-ok'),
+                  'fazla': ('Fatura fazla', 'badge-bad'), 'eksik': ('Fatura eksik', 'badge-warn')} %}
+<div class="section-title">
+  <h2>Ödeme ve fatura kontrolü</h2>
+  <span class="muted">{{ month_label }} · tedarikçi faturasını kendi kayıtlarınızla karşılaştırın</span>
+</div>
+<div class="pay-grid">
+  <div class="pay total">
+    <div class="pay-head"><strong>Bu ay toplam ödenecek</strong></div>
+    <div class="pay-amount">₺{{ month_total|tl }}<small>Kayıtlarınıza göre, KDV dahil</small></div>
+    {% set with_invoice = statements|selectattr('invoice')|list %}
+    {% set suppliers_count = statements|selectattr('supplier_id')|list|length %}
+    <div class="pay-meta">
+      {{ orders_all_count }} sipariş · {{ suppliers_count }} firma<br>
+      Girilen faturalar: {{ with_invoice|length }}/{{ suppliers_count }}{% if with_invoice %} · ₺{{ invoice_total|tl }}{% endif %}
+    </div>
+    {% set problems = statements|selectattr('status', 'in', ['fazla', 'eksik'])|list %}
+    {% if problems %}<div class="pay-diff fazla">{{ problems|length }} faturada fark var</div>
+    {% elif with_invoice and with_invoice|length == suppliers_count %}<div class="pay-diff tutuyor">✓ Tüm faturalar tutuyor</div>{% endif %}
+    <div class="pay-links"><a class="link" href="{{ url_for('export_orders', ay=month) }}">⬇ Aylık CSV (tüm firmalar)</a></div>
+  </div>
+
+  {% for st in statements %}
+  {% set label = labels[st.status] %}
+  <div class="pay {{ st.status if st.supplier_id }}" id="firma-{{ st.supplier_id or 'yok' }}">
+    <div class="pay-head">
+      <strong>{{ st.name or 'Firması seçilmemiş siparişler' }}</strong>
+      {% if st.supplier_id %}<span class="badge {{ label[1] }}">{{ label[0] }}</span>{% endif %}
+    </div>
+    <div class="pay-amount">₺{{ st.grand_total|tl }}<small>Kayıtlarınıza göre, KDV dahil</small></div>
+    <div class="pay-meta">{{ st.count }} sipariş · KDV hariç ₺{{ st.subtotal|tl }} · KDV ₺{{ st.vat|tl }}</div>
+    {% if st.supplier_id %}
+      <form class="pay-form" method="post" action="{{ url_for('invoice_save') }}">
+        <input type="hidden" name="ay" value="{{ month }}">
+        <input type="hidden" name="firma" value="{{ st.supplier_id }}">
+        <input name="amount" inputmode="decimal" placeholder="Fatura tutarı ₺" aria-label="Fatura tutarı (KDV dahil)"
+               value="{{ st.invoice.amount|tl if st.invoice else '' }}">
+        <input name="invoice_no" placeholder="Fatura no" aria-label="Fatura no" value="{{ st.invoice.invoice_no if st.invoice else '' }}">
+        <button class="btn btn-sm" type="submit">Kaydet</button>
+      </form>
+      {% if st.status == 'bekliyor' %}
+        <div class="pay-diff bekliyor">Faturadaki KDV dahil toplamı girin; fark hesaplansın.</div>
+      {% elif st.status == 'tutuyor' %}
+        <div class="pay-diff tutuyor">✓ Fatura kayıtlarla tutuyor{% if st.diff %} (₺{{ st.diff|abs|tl }} yuvarlama farkı){% endif %}</div>
+      {% elif st.status == 'fazla' %}
+        <div class="pay-diff fazla">Fatura ₺{{ st.diff|tl }} fazla. Siparişleri faturayla gün gün karşılaştırın.</div>
+      {% else %}
+        <div class="pay-diff eksik">Fatura ₺{{ (-st.diff)|tl }} eksik. Eksik ya da fazla girilmiş sipariş olabilir.</div>
+      {% endif %}
+      <div class="pay-links">
+        <a class="link" href="{{ url_for('orders', ay=month, firma=st.supplier_id) }}">Siparişleri göster</a>
+        <a class="link" href="{{ url_for('export_orders', ay=month, firma=st.supplier_id) }}">⬇ CSV</a>
+      </div>
+    {% else %}
+      <div class="pay-diff eksik">Bu siparişler hiçbir firmanın hesabına girmiyor; firmasını seçin.</div>
+    {% endif %}
+  </div>
+  {% endfor %}
+</div>
+
+{% if supplier_id %}
+<div class="section-title">
+  <h2>{{ (suppliers|selectattr('id', 'equalto', supplier_id)|first).name }} siparişleri</h2>
+  <a class="link" href="{{ url_for('orders', ay=month) }}">Tüm firmaları göster</a>
+</div>
+{% endif %}
+
+<div class="card">
+  {% if orders %}
+  <div class="table-wrap">
+    <table class="pivot">
+      <thead>
+        <tr>
+          <th rowspan="2" style="text-align:left">Tarih</th>
+          {% for f in summary.fruit_cols %}<th colspan="3" class="grp {{ 'band' if loop.index is odd }}">{{ f }}</th>{% endfor %}
+          <th rowspan="2" class="grp num">Toplam</th>
+          <th rowspan="2" class="num">KDV dahil</th>
+          <th rowspan="2" style="text-align:left">Firma</th>
+          <th rowspan="2"></th>
+        </tr>
+        <tr>
+          {% for f in summary.fruit_cols %}
+            {% set band = 'band' if loop.index is odd %}
+            {% set unit = summary.units[f] %}
+            <th class="num grp {{ band }}">{{ unit }}</th><th class="num {{ band }}">₺/{{ unit }}</th><th class="num {{ band }}">Tutar</th>
+          {% endfor %}
+        </tr>
+      </thead>
+      <tbody>
+        {% for o in orders %}
+          <tr>
+            <td><a class="link" href="{{ url_for('order_edit', order_id=o.id) }}">{{ o.order_date|tarih }}</a></td>
+            {% for f in summary.fruit_cols %}
+              {% set band = 'band' if loop.index is odd %}
+              {% set a = o.by_fruit.get(f) %}
+              {% if a %}
+                <td class="num grp {{ band }}">{{ a.kg|num }}</td>
+                <td class="num {{ band }}">{{ (a.total / a.kg)|num }}</td>
+                <td class="num {{ band }}">{{ a.total|tl }}</td>
+              {% else %}
+                <td class="num grp empty-cell {{ band }}">–</td><td class="{{ band }}"></td><td class="{{ band }}"></td>
+              {% endif %}
+            {% endfor %}
+            <td class="num grp">₺{{ o.subtotal|tl }}</td>
+            <td class="num"><strong>₺{{ o.grand_total|tl }}</strong></td>
+            <td>{{ o.supplier or '' }}{% if o.note %} <span class="muted" title="{{ o.note }}">📝</span>{% endif %}</td>
+            <td>{% if o.receipt %}<a href="{{ url_for('receipt_file', name=o.receipt) }}" target="_blank" title="Fişi aç">🧾</a>{% endif %}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+      <tfoot>
+        <tr>
+          <td>Toplam</td>
+          {% for f in summary.fruit_cols %}
+            {% set band = 'band' if loop.index is odd %}
+            {% set a = summary.fruits[f] %}
+            <td class="num grp {{ band }}">{{ a.kg|num }}</td>
+            <td class="num {{ band }}" title="Ağırlıklı ortalama">{{ (a.total / a.kg)|num }}</td>
+            <td class="num {{ band }}">{{ a.total|tl }}</td>
+          {% endfor %}
+          <td class="num grp">₺{{ summary.subtotal|tl }}</td>
+          <td class="num">₺{{ summary.grand_total|tl }}</td>
+          <td colspan="2"></td>
+        </tr>
+      </tfoot>
+    </table>
+  </div>
+  {% else %}
+    <div class="empty">Bu ay için sipariş yok. <a class="link" href="{{ url_for('order_new') }}">Yeni sipariş girin</a>.</div>
+  {% endif %}
+</div>
+
+{% if orders %}
+<div class="summary">
+  <div class="card">
+    <h2>Meyve bazında</h2>
+    <table>
+      <thead><tr><th>Meyve</th><th class="num">Toplam miktar</th><th class="num">Ort. birim fiyat</th><th class="num">Tutar</th></tr></thead>
+      <tbody>
+        {% for f in summary.fruit_cols %}{% set a = summary.fruits[f] %}
+          {% set unit = summary.units[f] %}
+          <tr><td>{{ f }}</td><td class="num">{{ a.kg|num }} {{ unit }}</td><td class="num">₺{{ (a.total / a.kg)|num }}/{{ unit }}</td><td class="num">₺{{ a.total|tl }}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+{% endblock %}

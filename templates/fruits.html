@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block title %}Meyve birimleri – Stok Takip{% endblock %}
+{% block content %}
+<h1>Meyve birimleri</h1>
+<form class="card" method="post" style="max-width:520px">
+  <input type="hidden" name="next" value="{{ next }}">
+  <p class="muted" style="margin-top:0">Her meyvenin hangi birimle geldiğini seçin. Sipariş formu, sipariş tablosu ve CSV bu birimi kullanır.
+    Adet ve kasa için miktar tam sayı olmalıdır.</p>
+  <table>
+    <thead><tr><th>Meyve</th><th>Birim</th></tr></thead>
+    <tbody>
+      {% for f in fruits %}
+      <tr>
+        <td><label for="unit-{{ f.id }}" style="font-weight:400;margin:0">{{ f.name }}</label></td>
+        <td>
+          <select id="unit-{{ f.id }}" name="unit-{{ f.id }}">
+            {% for u in choices %}<option value="{{ u }}" {{ 'selected' if u == f.unit }}>{{ u }}</option>{% endfor %}
+          </select>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <div class="row" style="margin-top:16px">
+    <button class="btn btn-primary" type="submit">Kaydet</button>
+    <a class="btn" href="{{ next if next.startswith('/') and not next.startswith('//') else url_for('orders') }}">Geri</a>
+  </div>
+</form>
+{% endblock %}

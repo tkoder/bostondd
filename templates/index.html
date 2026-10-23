@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="stats">
+  <div class="stat"><div class="label">Toplam ürün</div><div class="value">{{ stats.count }}</div></div>
+  <a class="stat {{ 'alert' if stats.critical }}" href="{{ url_for('index', kritik=1) }}">
+    <div class="label">Kritik stokta</div><div class="value">{{ stats.critical }}</div>
+  </a>
+  <div class="stat"><div class="label">Toplam stok değeri</div><div class="value">{{ stats.value|num }} ₺</div></div>
+</div>
+
+<div class="card">
+  <div class="row" style="margin-bottom:14px">
+    <form class="row" method="get">
+      <input type="search" name="q" value="{{ q }}" placeholder="Ad, kod veya kategori ara…">
+      <label class="row" style="font-weight:400;margin:0;gap:6px">
+        <input type="checkbox" name="kritik" value="1" {{ 'checked' if only_critical }} onchange="this.form.submit()">
+        Yalnızca kritik
+      </label>
+      <button class="btn" type="submit">Ara</button>
+      {% if q or only_critical %}<a class="btn" href="{{ url_for('index') }}">Temizle</a>{% endif %}
+    </form>
+    <span class="spacer"></span>
+    <a class="btn" href="{{ url_for('export_stock') }}">⬇ CSV (stok)</a>
+    <a class="btn btn-primary" href="{{ url_for('product_new') }}">+ Yeni ürün</a>
+  </div>
+
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Kod</th><th>Ürün</th><th>Kategori</th>
+          <th class="num">Stok</th><th class="num">Min.</th><th class="num">Fiyat</th><th class="num">Değer</th><th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for p in products %}
+          {% set crit = p.stock <= p.min_stock %}
+          <tr class="{{ 'critical' if crit }}">
+            <td class="muted">{{ p.sku }}</td>
+            <td><a class="link" href="{{ url_for('product_detail', product_id=p.id) }}">{{ p.name }}</a></td>
+            <td>{{ p.category }}</td>
+            <td class="num"><strong>{{ p.stock|num }}</strong> {{ p.unit }}</td>
+            <td class="num">{{ p.min_stock|num }}</td>
+            <td class="num">{{ p.price|num }} ₺</td>
+            <td class="num">{{ ([p.stock, 0]|max * p.price)|num }} ₺</td>
+            <td>{% if crit %}<span class="badge badge-crit">KRİTİK</span>{% endif %}</td>
+          </tr>
+        {% else %}
+          <tr><td colspan="8" class="empty">
+            {% if q or only_critical %}Eşleşen ürün yok.{% else %}Henüz ürün yok. <a class="link" href="{{ url_for('product_new') }}">İlk ürünü ekleyin</a>.{% endif %}
+          </td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

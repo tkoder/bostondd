@@ -1,0 +1,302 @@
+{% extends "base.html" %}
+{% block title %}{{ 'Yeni meyve siparişi' if is_new else 'Siparişi düzenle' }} – Stok Takip{% endblock %}
+{% block main_class %}wide{% endblock %}
+{% block content %}
+<style>
+  .layout { display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: 18px; align-items: start; }
+  @media (max-width: 900px) {
+    .layout { grid-template-columns: minmax(0, 1fr); }
+    .receipt-panel { order: -1; }
+    .preview img { max-height: 320px; object-fit: contain; background: #f9fafb; }
+  }
+  .lines td { padding: 5px 6px; }
+  .lines input { width: 100%; }
+  .lines .col-fruit { min-width: 140px; }
+  .lines .col-num { width: 130px; }
+  .qty { display: flex; align-items: center; gap: 6px; }
+  .qty .unit { font-size: 12px; color: var(--muted); width: 30px; }
+  .lines .col-total { width: 130px; text-align: right; font-variant-numeric: tabular-nums; }
+  .totals { margin-left: auto; max-width: 340px; margin-top: 12px; }
+  .totals div { display: flex; justify-content: space-between; padding: 4px 0; }
+  .totals .grand { font-size: 18px; font-weight: 700; border-top: 2px solid var(--text); margin-top: 4px; padding-top: 8px; }
+  .totals input { width: 64px; text-align: right; padding: 3px 6px; }
+  .drop { border: 2px dashed #cbd5e1; border-radius: 10px; padding: 22px; text-align: center; cursor: pointer; color: var(--muted); }
+  .drop:hover, .drop.over { border-color: var(--primary); background: #eff6ff; color: var(--primary); }
+  .drop strong { display: block; color: var(--text); font-size: 15px; margin-bottom: 4px; }
+  .preview { margin-top: 14px; }
+  .preview img { width: 100%; border-radius: 8px; border: 1px solid var(--border); cursor: zoom-in; }
+  .status { margin-top: 12px; padding: 10px 12px; border-radius: 8px; font-size: 13px; }
+  .status ul { margin: 6px 0 0; padding-left: 18px; }
+  .status-busy { background: #eff6ff; color: var(--primary); }
+  .status-ok { background: var(--green-bg); color: var(--green); }
+  .status-warn { background: var(--amber-bg); color: var(--amber); }
+  .status-error { background: var(--red-bg); color: var(--red); }
+  .filled { animation: filled 2s ease-out; }
+  .lines input.need { border-color: var(--red); background: #fff5f5; }
+  .claude-box { margin-top: 12px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; font-size: 12px; }
+  .claude-box .muted { flex: 1; min-width: 160px; }
+  .claude-box[hidden] { display: none; }
+  .btn:disabled { opacity: .5; cursor: not-allowed; }
+  @keyframes filled { from { background: #fef08a; } to { background: #fff; } }
+  .spinner { display: inline-block; width: 12px; height: 12px; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: spin .8s linear infinite; vertical-align: -1px; margin-right: 6px; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+</style>
+
+<div class="row" style="margin-bottom:16px">
+  <h1 style="margin:0">{{ 'Yeni meyve siparişi' if is_new else 'Siparişi düzenle' }}</h1>
+  <span class="spacer"></span>
+  {% if not is_new %}
+  <form class="inline" method="post" action="{{ url_for('order_delete', order_id=order.id) }}"
+        onsubmit="return confirm('Bu sipariş silinsin mi?')">
+    <button class="btn btn-danger" type="submit">Siparişi sil</button>
+  </form>
+  {% endif %}
+</div>
+
+<div class="layout">
+  <form id="order-form" class="card" method="post" autocomplete="off">
+    <input type="hidden" name="receipt" id="receipt" value="{{ order.receipt or '' }}">
+    <div class="grid">
+      <div><label for="order_date">Tarih *</label><input type="date" id="order_date" name="order_date" value="{{ order.order_date }}" required></div>
+      <div><label for="supplier">Firma *</label><input id="supplier" name="supplier" list="supplier-list" value="{{ order.supplier or '' }}" placeholder="Listeden seçin veya yeni yazın" required></div>
+      <div><label for="note">Not</label><input id="note" name="note" value="{{ order.note or '' }}"></div>
+    </div>
+
+    <h2 style="margin-top:22px">Meyveler</h2>
+    <div class="table-wrap">
+      <table class="lines">
+        <thead><tr><th class="col-fruit">Meyve</th><th class="num col-num">Miktar</th><th class="num col-num">Birim fiyat</th><th class="num col-total">Tutar</th><th></th></tr></thead>
+        <tbody id="lines">
+          {% set rows = order.lines if order.lines else [{}, {}, {}] %}
+          {% for line in rows %}
+          <tr>
+            <td><input name="fruit" list="fruit-list" value="{{ line.fruit or '' }}" class="col-fruit"></td>
+            <td><div class="qty"><input name="kg" inputmode="decimal" value="{{ line.kg|input_num }}" style="text-align:right"><span class="unit">{{ units.get(line.fruit, 'kg') if line.fruit else '' }}</span></div></td>
+            <td><input name="unit_price" inputmode="decimal" value="{{ line.unit_price|input_num }}" style="text-align:right"></td>
+            <td class="col-total">–</td>
+            <td><button type="button" class="btn btn-sm btn-danger" data-remove title="Satırı sil">✕</button></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <button type="button" class="btn btn-sm" id="add-line" style="margin-top:8px">+ Satır ekle</button>
+
+    <div class="totals">
+      <div><span>Toplam</span><span id="subtotal">₺0,00</span></div>
+      <div><span>KDV % <input name="vat_rate" id="vat_rate" inputmode="decimal" value="{{ order.vat_rate|input_num }}"></span><span id="vat">₺0,00</span></div>
+      <div class="grand"><span>KDV dahil</span><span id="grand">₺0,00</span></div>
+    </div>
+
+    <div class="row" style="margin-top:20px">
+      <button class="btn btn-primary" type="submit">Kaydet</button>
+      <a class="btn" href="{{ url_for('orders', ay=order.order_date[:7]) }}">Vazgeç</a>
+    </div>
+  </form>
+
+  <aside class="card receipt-panel">
+    <h2>İrsaliye / fiş</h2>
+    <label class="drop" id="drop">
+      <strong>📷 Fiş fotoğrafı yükle</strong>
+      {% if local_ready %}Bilgiler fişten otomatik okunur (ücretsiz){% else %}Fiş siparişe eklenir{% endif %}<br>
+      <span style="font-size:12px">JPG, PNG, WEBP veya PDF · tıklayın ya da sürükleyin</span>
+      <input type="file" id="file" accept="image/*,application/pdf" hidden>
+    </label>
+    <div id="status"></div>
+    <div id="claude-box" class="claude-box" {{ 'hidden' if not order.receipt }}>
+      <button type="button" class="btn" id="claude-btn" {{ 'disabled' if not claude_ready }}>🤖 Claude ile tekrar oku</button>
+      <div class="muted">
+        {% if claude_ready %}Sonuç eksik ya da hatalıysa: daha doğru okur, fiş başına birkaç sent.
+        {% else %}Kullanmak için <code>ayarlar.env</code> dosyasına <code>ANTHROPIC_API_KEY</code> ekleyin.{% endif %}
+      </div>
+    </div>
+    <div class="preview" id="preview">
+      {% if order.receipt %}
+        {% set url = url_for('receipt_file', name=order.receipt) %}
+        {% if order.receipt.endswith('.pdf') %}<a class="link" href="{{ url }}" target="_blank">🧾 Fişi aç (PDF)</a>
+        {% else %}<a href="{{ url }}" target="_blank"><img src="{{ url }}" alt="Fiş"></a>{% endif %}
+      {% endif %}
+    </div>
+  </aside>
+</div>
+
+<datalist id="fruit-list">{% for f in fruits %}<option value="{{ f }}">{% endfor %}</datalist>
+<datalist id="supplier-list">{% for s in suppliers %}<option value="{{ s }}">{% endfor %}</datalist>
+
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id);
+  const LOCAL = {{ local_ready|tojson }};
+  const UNITS = {{ units|tojson }};
+  const unitOf = (fruit) => UNITS[(fruit || "").trim()] || UNITS[(fruit || "").trim().replace(/^./, (c) => c.toLocaleUpperCase("tr-TR"))] || "kg";
+  const linesEl = $("lines");
+  const money = (v) => "₺" + v.toLocaleString("tr-TR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const numText = (v) => v.toLocaleString("tr-TR", { maximumFractionDigits: 3 });
+  const inputText = (v) => (v === null || v === undefined) ? "" : String(v).replace(".", ",");
+  const parse = (s) => {
+    s = String(s || "").trim();
+    if (!s) return 0;
+    if (s.includes(",")) s = s.replace(/\./g, "").replace(",", ".");
+    const n = parseFloat(s);
+    return isNaN(n) ? 0 : n;
+  };
+  const near = (a, b) => Math.abs(a - b) < 0.01;
+
+  function rowTemplate() {
+    const tr = linesEl.rows[0].cloneNode(true);
+    tr.querySelectorAll("input").forEach((i) => (i.value = ""));
+    return tr;
+  }
+  const blankRow = rowTemplate();
+
+  function addLine(line = {}) {
+    const tr = blankRow.cloneNode(true);
+    tr.querySelector("[name=fruit]").value = line.fruit || "";
+    tr.querySelector("[name=kg]").value = inputText(line.kg);
+    tr.querySelector("[name=unit_price]").value = inputText(line.unit_price);
+    showUnit(tr);
+    linesEl.appendChild(tr);
+    return tr;
+  }
+
+  function showUnit(tr) {
+    const fruit = tr.querySelector("[name=fruit]").value;
+    tr.querySelector(".unit").textContent = fruit.trim() ? unitOf(fruit) : "";
+  }
+  linesEl.addEventListener("input", (e) => { if (e.target.name === "fruit") showUnit(e.target.closest("tr")); });
+
+  function recalc() {
+    let subtotal = 0;
+    for (const tr of linesEl.rows) {
+      const kg = parse(tr.querySelector("[name=kg]").value);
+      const price = parse(tr.querySelector("[name=unit_price]").value);
+      const total = kg * price;
+      subtotal += total;
+      tr.querySelector(".col-total").textContent = total ? money(total) : "–";
+    }
+    const vat = subtotal * parse($("vat_rate").value) / 100;
+    $("subtotal").textContent = money(subtotal);
+    $("vat").textContent = money(vat);
+    $("grand").textContent = money(subtotal + vat);
+  }
+
+  linesEl.addEventListener("input", recalc);
+  $("vat_rate").addEventListener("input", recalc);
+  linesEl.addEventListener("click", (e) => {
+    if (!e.target.matches("[data-remove]")) return;
+    if (linesEl.rows.length > 1) e.target.closest("tr").remove();
+    else e.target.closest("tr").querySelectorAll("input").forEach((i) => (i.value = ""));
+    recalc();
+  });
+  $("add-line").addEventListener("click", () => { addLine().querySelector("input").focus(); });
+  recalc();
+
+  // ---- Fiş yükleme ve okuma ----
+  const status = $("status");
+  function showStatus(kind, html) { status.className = "status status-" + kind; status.innerHTML = html; }
+  const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
+  function showPreview(url, isPdf) {
+    $("preview").innerHTML = isPdf
+      ? `<a class="link" href="${url}" target="_blank">🧾 Fişi aç (PDF)</a>`
+      : `<a href="${url}" target="_blank"><img src="${url}" alt="Fiş"></a>`;
+  }
+
+  function flashField(el) { el.classList.remove("filled"); void el.offsetWidth; el.classList.add("filled"); }
+
+  function hasLines() {
+    return [...linesEl.querySelectorAll("input")].some((i) => i.value.trim());
+  }
+
+  function markMissingFruits() {
+    for (const input of linesEl.querySelectorAll("[name=fruit]")) {
+      const row = input.closest("tr");
+      const filled = [...row.querySelectorAll("input")].some((i) => i.value.trim());
+      input.classList.toggle("need", filled && !input.value.trim());
+    }
+  }
+  linesEl.addEventListener("input", markMissingFruits);
+
+  function applyReceipt(data, { source, replace }) {
+    const warnings = [];
+    if (data.date) { $("order_date").value = data.date; flashField($("order_date")); }
+    if (data.supplier) { $("supplier").value = data.supplier; flashField($("supplier")); }
+
+    const lines = data.lines || [];
+    if (lines.length && (replace || !hasLines() || confirm("Mevcut meyve satırları fişteki bilgilerle değiştirilsin mi?"))) {
+      linesEl.innerHTML = "";
+      lines.forEach((line, i) => {
+        const tr = addLine(line);
+        tr.querySelectorAll("input").forEach(flashField);
+        const label = esc(line.fruit || `${i + 1}. satır`);
+        if (line.unit_price === null) warnings.push(`${label}: birim fiyat okunamadı, elle girin.`);
+        else if (line.line_total !== null && !near(line.kg * line.unit_price, line.line_total)) {
+          warnings.push(`${label}: fişte tutar ${money(line.line_total)} yazıyor, ama ${numText(line.kg)} ${unitOf(line.fruit)} × ${money(line.unit_price)} = ${money(line.kg * line.unit_price)}. Kontrol edin.`);
+        }
+      });
+      recalc();
+      markMissingFruits();
+      const computed = lines.reduce((t, l) => t + l.kg * (l.unit_price || 0), 0);
+      if (data.total !== null && !near(computed, data.total)) {
+        warnings.push(`Fişteki genel toplam ${money(data.total)}, hesaplanan ${money(computed)}. Eksik ya da hatalı satır olabilir.`);
+      }
+    }
+    if (!data.supplier) warnings.push("Fişte firma bilgisi yok; firmayı seçin.");
+    for (const note of (data.notes || "").split("\n")) if (note.trim()) warnings.push(esc(note));
+
+    const head = `✓ Fiş ${source} okundu: ${lines.length} satır. Kaydetmeden önce kontrol edin.`;
+    if (warnings.length) showStatus("warn", `${head}<ul>${warnings.map((w) => `<li>${w}</li>`).join("")}</ul>`);
+    else showStatus("ok", head);
+  }
+
+  async function upload(file) {
+    if (!file) return;
+    const isPdf = file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf");
+    if (!isPdf) showPreview(URL.createObjectURL(file), false);
+    showStatus("busy", `<span class="spinner"></span>Fiş yükleniyor${LOCAL && !isPdf ? " ve okunuyor…" : "…"}`);
+    const body = new FormData();
+    body.append("file", file);
+    try {
+      const res = await fetch("{{ url_for('receipt_upload') }}", { method: "POST", body });
+      const result = await res.json();
+      if (!result.receipt) { showStatus("error", esc(result.error || "Yükleme başarısız.")); return; }
+      $("receipt").value = result.receipt;
+      $("claude-box").hidden = false;
+      showPreview(result.receipt_url, isPdf);
+      if (result.data) applyReceipt(result.data, { source: "ücretsiz okumayla", replace: false });
+      else if (result.error) showStatus("warn", `Fiş eklendi, ancak otomatik okunamadı: ${esc(result.error)}<br>Claude ile okutabilir ya da bilgileri elle girebilirsiniz.`);
+      else showStatus("ok", "✓ Fiş eklendi.");
+    } catch (err) {
+      showStatus("error", "Sunucuya ulaşılamadı: " + esc(err.message));
+    }
+  }
+
+  async function readWithClaude() {
+    const btn = $("claude-btn");
+    btn.disabled = true;
+    showStatus("busy", `<span class="spinner"></span>Claude fişi okuyor… (10–40 sn)`);
+    try {
+      const res = await fetch("{{ url_for('receipt_read_claude') }}", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ receipt: $("receipt").value }),
+      });
+      const result = await res.json();
+      if (result.data) applyReceipt(result.data, { source: "Claude ile", replace: true });
+      else showStatus("error", esc(result.error || "Fiş okunamadı."));
+    } catch (err) {
+      showStatus("error", "Sunucuya ulaşılamadı: " + esc(err.message));
+    } finally {
+      btn.disabled = false;
+    }
+  }
+  $("claude-btn").addEventListener("click", readWithClaude);
+
+  $("file").addEventListener("change", (e) => upload(e.target.files[0]));
+  const drop = $("drop");
+  drop.addEventListener("dragover", (e) => { e.preventDefault(); drop.classList.add("over"); });
+  drop.addEventListener("dragleave", () => drop.classList.remove("over"));
+  drop.addEventListener("drop", (e) => { e.preventDefault(); drop.classList.remove("over"); upload(e.dataTransfer.files[0]); });
+})();
+</script>
+{% endblock %}

@@ -1,0 +1,10 @@
+.venv/
+__pycache__/
+
+# Gerçek veriler ve gizli bilgiler depoya girmez
+stok.db
+stok.db.yedek-*
+fisler/
+ayarlar.env
+
+.DS_Store

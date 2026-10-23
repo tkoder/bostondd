@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}{{ 'Yeni ürün' if is_new else 'Ürünü düzenle' }} – Stok Takip{% endblock %}
+{% block content %}
+<h1>{{ 'Yeni ürün' if is_new else 'Ürünü düzenle' }}</h1>
+<form class="card" method="post">
+  <div class="grid">
+    <div><label for="sku">Ürün kodu (SKU) *</label><input id="sku" name="sku" value="{{ product.sku or '' }}" required></div>
+    <div><label for="name">Ürün adı *</label><input id="name" name="name" value="{{ product.name or '' }}" required></div>
+    <div><label for="category">Kategori</label><input id="category" name="category" value="{{ product.category or '' }}"></div>
+    <div><label for="unit">Birim</label><input id="unit" name="unit" value="{{ product.unit or 'adet' }}" placeholder="adet, kg, lt, koli…"></div>
+    <div><label for="price">Birim fiyat (₺)</label><input id="price" name="price" inputmode="decimal" value="{{ product.price if product.price is not none else '' }}"></div>
+    <div><label for="min_stock">Minimum stok (kritik seviye)</label><input id="min_stock" name="min_stock" inputmode="decimal" value="{{ product.min_stock if product.min_stock is not none else '' }}"></div>
+    {% if is_new %}
+    <div><label for="initial_stock">Açılış stoğu</label><input id="initial_stock" name="initial_stock" inputmode="decimal" value="{{ product.initial_stock or '' }}" placeholder="0"></div>
+    {% endif %}
+  </div>
+  <div class="row" style="margin-top:18px">
+    <button class="btn btn-primary" type="submit">Kaydet</button>
+    <a class="btn" href="{{ url_for('index') if is_new else url_for('product_detail', product_id=product.id) }}">Vazgeç</a>
+  </div>
+</form>
+{% endblock %}

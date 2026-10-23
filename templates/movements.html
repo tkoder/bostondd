@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}Hareketler – Stok Takip{% endblock %}
+{% block content %}
+<div class="row" style="margin-bottom:16px">
+  <h1 style="margin:0">Stok hareketleri</h1>
+  <span class="spacer"></span>
+  <a class="btn" href="{{ url_for('export_movements') }}">⬇ CSV (tüm hareketler)</a>
+</div>
+<div class="card">
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Tarih</th><th>Kod</th><th>Ürün</th><th>Tür</th><th class="num">Miktar</th><th>Açıklama</th></tr></thead>
+      <tbody>
+        {% for m in movements %}
+          <tr>
+            <td class="muted">{{ m.created_at }}</td>
+            <td class="muted">{{ m.sku }}</td>
+            <td><a class="link" href="{{ url_for('product_detail', product_id=m.product_id) }}">{{ m.name }}</a></td>
+            <td>{% if m.type == 'IN' %}<span class="badge badge-in">Giriş</span>{% else %}<span class="badge badge-out">Çıkış</span>{% endif %}</td>
+            <td class="num">{{ '+' if m.type == 'IN' else '−' }}{{ m.quantity|num }} {{ m.unit }}</td>
+            <td style="white-space:normal">{{ m.note }}</td>
+          </tr>
+        {% else %}
+          <tr><td colspan="6" class="empty">Henüz hareket yok.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% if movements|length == 500 %}<p class="muted">Son 500 hareket gösteriliyor. Tamamı için CSV'yi indirin.</p>{% endif %}
+</div>
+{% endblock %}

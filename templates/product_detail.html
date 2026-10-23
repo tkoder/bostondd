@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block title %}{{ product.name }} – Stok Takip{% endblock %}
+{% block content %}
+{% set crit = product.stock <= product.min_stock %}
+<div class="row" style="margin-bottom:16px">
+  <div>
+    <h1 style="margin:0">{{ product.name }} {% if crit %}<span class="badge badge-crit">KRİTİK</span>{% endif %}</h1>
+    <div class="muted">{{ product.sku }}{% if product.category %} · {{ product.category }}{% endif %}</div>
+  </div>
+  <span class="spacer"></span>
+  <a class="btn" href="{{ url_for('product_edit', product_id=product.id) }}">Düzenle</a>
+  <form class="inline" method="post" action="{{ url_for('product_delete', product_id=product.id) }}"
+        onsubmit='return confirm({{ ("“" ~ product.name ~ "” ve tüm hareketleri silinsin mi?")|tojson }})'>
+    <button class="btn btn-danger" type="submit">Sil</button>
+  </form>
+</div>
+
+<div class="stats">
+  <div class="stat {{ 'alert' if crit }}"><div class="label">Mevcut stok</div><div class="value">{{ product.stock|num }} {{ product.unit }}</div></div>
+  <div class="stat"><div class="label">Minimum stok</div><div class="value">{{ product.min_stock|num }} {{ product.unit }}</div></div>
+  <div class="stat"><div class="label">Birim fiyat</div><div class="value">{{ product.price|num }} ₺</div></div>
+  <div class="stat"><div class="label">Stok değeri</div><div class="value">{{ ([product.stock, 0]|max * product.price)|num }} ₺</div></div>
+</div>
+
+<form class="card" method="post" action="{{ url_for('movement_add', product_id=product.id) }}">
+  <h2>Stok hareketi ekle</h2>
+  <div class="row">
+    <select name="type">
+      <option value="IN">Giriş (+)</option>
+      <option value="OUT">Çıkış (−)</option>
+    </select>
+    <input name="quantity" inputmode="decimal" placeholder="Miktar ({{ product.unit }})" required style="width:150px">
+    <input name="note" placeholder="Açıklama (ör. fatura no, müşteri)" style="flex:1;min-width:200px">
+    <button class="btn btn-primary" type="submit">Kaydet</button>
+  </div>
+</form>
+
+<div class="card">
+  <h2>Hareket geçmişi</h2>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Tarih</th><th>Tür</th><th class="num">Miktar</th><th>Açıklama</th><th></th></tr></thead>
+      <tbody>
+        {% for m in movements %}
+          <tr>
+            <td class="muted">{{ m.created_at }}</td>
+            <td>{% if m.type == 'IN' %}<span class="badge badge-in">Giriş</span>{% else %}<span class="badge badge-out">Çıkış</span>{% endif %}</td>
+            <td class="num">{{ '+' if m.type == 'IN' else '−' }}{{ m.quantity|num }} {{ product.unit }}</td>
+            <td style="white-space:normal">{{ m.note }}</td>
+            <td>
+              <form class="inline" method="post" action="{{ url_for('movement_delete', movement_id=m.id) }}"
+                    onsubmit="return confirm('Bu hareket silinsin mi?')">
+                <button class="btn btn-sm btn-danger" type="submit">Sil</button>
+              </form>
+            </td>
+          </tr>
+        {% else %}
+          <tr><td colspan="5" class="empty">Henüz hareket yok.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}
